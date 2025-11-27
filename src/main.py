@@ -18,12 +18,16 @@ from .job_store import JobStore
 from .job_processor import JobProcessor
 
 # Logging setup
+from pathlib import Path
+log_dir = Path(__file__).parent.parent / "logs"
+log_dir.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('/var/log/feedemy-printer.log', mode='a')
+        logging.FileHandler(log_dir / 'feedemy-printer.log', mode='a')
     ]
 )
 logger = logging.getLogger(__name__)
