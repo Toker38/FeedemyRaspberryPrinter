@@ -252,12 +252,16 @@ class TemplateRenderer:
             output.extend(encode_turkish(line))
             output.extend(LF)
 
-            # Seçilen opsiyon
+            # Seçilen opsiyon (string veya dict olabilir)
             selected_option = item.get("selectedOption")
             if selected_option:
-                opt_name = selected_option.get("optionName", "")
-                output.extend(encode_turkish(f"  ({opt_name})"))
-                output.extend(LF)
+                if isinstance(selected_option, dict):
+                    opt_name = selected_option.get("optionName", "")
+                else:
+                    opt_name = str(selected_option)
+                if opt_name:
+                    output.extend(encode_turkish(f"  ({opt_name})"))
+                    output.extend(LF)
 
             # Eklentiler (Addons)
             if show_addons:
@@ -272,11 +276,14 @@ class TemplateRenderer:
                     output.extend(encode_turkish(addon_line))
                     output.extend(LF)
 
-            # Çıkarılan malzemeler
+            # Çıkarılan malzemeler (string listesi veya dict listesi olabilir)
             if show_removed:
                 removed = item.get("removedIngredients", [])
                 for ing in removed:
-                    ing_name = ing.get("ingredientName", ing.get("name", ""))
+                    if isinstance(ing, dict):
+                        ing_name = ing.get("ingredientName", ing.get("name", ""))
+                    else:
+                        ing_name = str(ing)
                     output.extend(encode_turkish(f"{removed_prefix}{ing_name}"))
                     output.extend(LF)
 
