@@ -44,14 +44,34 @@ CUT_PARTIAL = GS + b'V\x01'  # Kısmi kesim (kağıt bağlı kalır)
 
 # === Character Set ===
 # ESC t n - Select character code table
+# Not: Farklı yazıcı markaları farklı code page numaraları kullanır!
+#
+# Code Page Tablosu:
+#   Epson:    CP857 = 18 (0x12)
+#   Xprinter: CP857 = 37 (0x25)
+#   Generic:  WPC1254 = 38 (0x26)
+#
 CHARSET_PC437 = ESC + b't\x00'      # USA Standard Europe
 CHARSET_PC850 = ESC + b't\x02'      # Multilingual
-CHARSET_PC857 = ESC + b't\x12'      # Turkish
+CHARSET_PC857_EPSON = ESC + b't\x12'  # Turkish - Epson (18)
+CHARSET_PC857_XPRINTER = ESC + b't\x25'  # Turkish - Xprinter (37)
+CHARSET_WPC1254 = ESC + b't\x26'    # Windows-1254 Turkish (38)
 CHARSET_PC858 = ESC + b't\x13'      # Euro
-CHARSET_UTF8 = ESC + b't\xff'       # UTF-8 (some printers)
 
-# Default for Turkish
-SELECT_CHARSET = CHARSET_PC857
+# Default: Xprinter/Chinese printers (en yaygın)
+# Config'den değiştirilebilir: printer.charset = "epson" veya "xprinter"
+SELECT_CHARSET = CHARSET_PC857_XPRINTER
+
+def get_charset_command(charset_type: str = "xprinter") -> bytes:
+    """Yazıcı tipine göre charset komutu döndür"""
+    charsets = {
+        "epson": CHARSET_PC857_EPSON,
+        "xprinter": CHARSET_PC857_XPRINTER,
+        "generic": CHARSET_WPC1254,
+        "cp857": CHARSET_PC857_EPSON,
+        "wpc1254": CHARSET_WPC1254,
+    }
+    return charsets.get(charset_type.lower(), CHARSET_PC857_XPRINTER)
 
 # === International Character Set ===
 # ESC R n - Select international character set
@@ -118,19 +138,27 @@ TURKISH_CHARS = {
 }
 
 
+# Türkçe → ASCII dönüşüm tablosu
+TURKISH_TO_ASCII = {
+    'ç': 'c', 'Ç': 'C',
+    'ğ': 'g', 'Ğ': 'G',
+    'ı': 'i', 'İ': 'I',
+    'ö': 'o', 'Ö': 'O',
+    'ş': 's', 'Ş': 'S',
+    'ü': 'u', 'Ü': 'U',
+}
+
 def encode_turkish(text: str) -> bytes:
     """
-    Türkçe karakterleri CP857 byte'larına çevir
-    Desteklenmeyen karakterler ASCII'ye düşürülür
+    Türkçe karakterleri ASCII karşılıklarına çevir
+    ı→i, ğ→g, ü→u, ş→s, ö→o, ç→c
     """
-    result = bytearray()
+    result = []
     for char in text:
-        if char in TURKISH_CHARS:
-            result.extend(TURKISH_CHARS[char])
+        if char in TURKISH_TO_ASCII:
+            result.append(TURKISH_TO_ASCII[char])
         else:
-            try:
-                result.extend(char.encode('cp857'))
-            except UnicodeEncodeError:
-                # Fallback: ASCII'ye çevir veya ? koy
-                result.extend(char.encode('ascii', errors='replace'))
-    return bytes(result)
+            result.append(char)
+
+    # ASCII'ye encode et
+    return ''.join(result).encode('ascii', errors='replace')
