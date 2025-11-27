@@ -101,19 +101,20 @@ def get_align_command(align: str) -> bytes:
 
 # === Turkish Character Mapping ===
 # CP857 encoding için Türkçe karakterler
+# Referans: https://en.wikipedia.org/wiki/Code_page_857
 TURKISH_CHARS = {
-    'ğ': b'\x87',
-    'Ğ': b'\x86',
-    'ü': b'\x81',
-    'Ü': b'\x9a',
-    'ş': b'\x9f',
-    'Ş': b'\x9e',
-    'ı': b'\x8d',
-    'İ': b'\x98',
-    'ö': b'\x94',
-    'Ö': b'\x99',
-    'ç': b'\x87',  # CP857'de ç = 0x87
-    'Ç': b'\x80',
+    'ç': b'\x87',    # c with cedilla (lowercase) - 0x87
+    'Ç': b'\x80',    # C with cedilla (uppercase) - 0x80
+    'ğ': b'\xa7',    # g with breve (lowercase) - 0xA7
+    'Ğ': b'\xa6',    # G with breve (uppercase) - 0xA6
+    'ı': b'\x8d',    # dotless i (lowercase) - 0x8D
+    'İ': b'\x98',    # I with dot (uppercase) - 0x98
+    'ö': b'\x94',    # o with diaeresis (lowercase) - 0x94
+    'Ö': b'\x99',    # O with diaeresis (uppercase) - 0x99
+    'ş': b'\x9f',    # s with cedilla (lowercase) - 0x9F
+    'Ş': b'\x9e',    # S with cedilla (uppercase) - 0x9E
+    'ü': b'\x81',    # u with diaeresis (lowercase) - 0x81
+    'Ü': b'\x9a',    # U with diaeresis (uppercase) - 0x9A
 }
 
 

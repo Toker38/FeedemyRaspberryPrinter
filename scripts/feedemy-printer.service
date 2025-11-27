@@ -5,20 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/feedemy-raspberry-printer
-ExecStart=/usr/bin/python3 -m src.main
+WorkingDirectory=/opt/feedemy-printer
+ExecStart=/opt/feedemy-printer/venv/bin/python -m src.main
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-
-# Environment
 Environment=PYTHONUNBUFFERED=1
-
-# USB printer access
-SupplementaryGroups=lp dialout
 
 [Install]
 WantedBy=multi-user.target

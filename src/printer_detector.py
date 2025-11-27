@@ -19,6 +19,28 @@ except ImportError:
     logger.warning("pyudev not available - USB detection disabled")
 
 
+# Bilinen yazıcı modelleri (vendor_id, product_id) -> (vendor, model)
+KNOWN_PRINTER_MODELS = {
+    # Epson
+    ("04b8", "0e03"): ("Epson", "TM-T20"),
+    ("04b8", "0e15"): ("Epson", "TM-T88V"),
+    ("04b8", "0e28"): ("Epson", "TM-T88VI"),
+    ("04b8", "0202"): ("Epson", "TM-T20II"),
+    ("04b8", "0e27"): ("Epson", "TM-M30"),
+    # Xprinter
+    ("0483", "5720"): ("Xprinter", "XP-58"),
+    ("0483", "5740"): ("Xprinter", "XP-80"),
+    ("0483", "5743"): ("Xprinter", "XP-N160I"),
+    # Rongta
+    ("0fe6", "811e"): ("Rongta", "RP80"),
+    # Goojprt
+    ("1504", "0006"): ("Goojprt", "PT-210"),
+    # Generic POS
+    ("0416", "5011"): ("WinPOS", "WP-T810"),
+    ("28e9", "0289"): ("Generic", "POS-58"),
+}
+
+
 @dataclass
 class USBPrinter:
     """Tespit edilen USB yazıcı bilgisi"""
@@ -35,11 +57,44 @@ class USBPrinter:
         return self.device_path
 
     @property
+    def vendor_name(self) -> str:
+        """Yazıcı üreticisi"""
+        # Önce lookup table'dan bak
+        key = (self.vendor_id.lower(), self.product_id.lower())
+        if key in KNOWN_PRINTER_MODELS:
+            return KNOWN_PRINTER_MODELS[key][0]
+        # Manufacturer string varsa kullan
+        if self.manufacturer:
+            return self.manufacturer
+        # Vendor ID'den tahmin et
+        vendor_map = {
+            "04b8": "Epson",
+            "0416": "WinPOS",
+            "0483": "Xprinter",
+            "0fe6": "Rongta",
+            "1504": "Goojprt",
+            "28e9": "Generic POS",
+        }
+        return vendor_map.get(self.vendor_id.lower(), "Unknown")
+
+    @property
     def printer_model(self) -> str:
         """Yazıcı model adı"""
+        # Önce lookup table'dan bak
+        key = (self.vendor_id.lower(), self.product_id.lower())
+        if key in KNOWN_PRINTER_MODELS:
+            vendor, model = KNOWN_PRINTER_MODELS[key]
+            return f"{vendor} {model}"
+
+        # Product string varsa ve anlamlıysa kullan
         if self.product:
-            return self.product
-        return f"USB Printer ({self.vendor_id}:{self.product_id})"
+            # Yıl gibi anlamsız değerleri filtrele
+            if not self.product.isdigit() and len(self.product) > 2:
+                vendor = self.vendor_name
+                return f"{vendor} {self.product}"
+
+        # Fallback
+        return f"{self.vendor_name} Thermal Printer"
 
 
 class USBPrinterDetector:
