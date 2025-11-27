@@ -145,16 +145,22 @@ cmd_config_set() {
 DEFAULTCONFIG
     fi
 
-    # Update config using Python
-    $PYTHON << PYSCRIPT
+    # Update config using Python with environment variables (avoids quote escaping issues)
+    CONFIG_FILE="$CONFIG_FILE" CONFIG_KEY="$key" CONFIG_VALUE="$value" $PYTHON << 'PYSCRIPT'
 import json
+import os
+import sys
 
-config_file = "$CONFIG_FILE"
-key = "$key"
-value = "$value"
+config_file = os.environ['CONFIG_FILE']
+key = os.environ['CONFIG_KEY']
+value = os.environ['CONFIG_VALUE']
 
-with open(config_file, 'r') as f:
-    config = json.load(f)
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"✗ Config dosyası bozuk: {e}", file=sys.stderr)
+    sys.exit(1)
 
 # Parse nested keys (e.g., "api.base_url")
 keys = key.split('.')
@@ -167,7 +173,7 @@ for k in keys[:-1]:
 # Try to parse value as JSON (for booleans, numbers, null)
 try:
     parsed_value = json.loads(value)
-except:
+except (json.JSONDecodeError, ValueError):
     parsed_value = value
 
 obj[keys[-1]] = parsed_value
@@ -185,7 +191,7 @@ cmd_config_api() {
     if [ -z "$url" ]; then
         error "Kullanım: feedemy config api <url>"
     fi
-    cmd_config_set "api.base_url" "\"$url\""
+    cmd_config_set "api.base_url" "$url"
     info "API URL ayarlandı: $url"
 }
 
@@ -195,7 +201,7 @@ cmd_config_name() {
     if [ -z "$name" ]; then
         error "Kullanım: feedemy config name <device-name>"
     fi
-    cmd_config_set "device.name" "\"$name\""
+    cmd_config_set "device.name" "$name"
     info "Cihaz adı ayarlandı: $name"
 }
 
@@ -329,13 +335,200 @@ cmd_version() {
     echo -e "${CYAN}Feedemy Printer CLI${NC}"
     echo "Kurulum: $INSTALL_DIR"
     echo -n "Versiyon: "
-    git describe --tags 2>/dev/null || git rev-parse --short HEAD
+    if [ -f "$INSTALL_DIR/version.txt" ]; then
+        cat "$INSTALL_DIR/version.txt"
+    else
+        git describe --tags 2>/dev/null || git rev-parse --short HEAD
+    fi
     echo -n "Branch: "
-    git branch --show-current
+    git branch --show-current 2>/dev/null || echo "main"
+}
+
+cmd_test_print() {
+    check_install
+
+    echo -e "${CYAN}=== Test Yazdırma ===${NC}"
+
+    cd "$INSTALL_DIR"
+    $PYTHON << 'PYSCRIPT'
+import sys
+sys.path.insert(0, '.')
+
+from src.printer_manager import PrinterManager
+
+print("Yazıcılar taranıyor...")
+manager = PrinterManager()
+manager.start()
+
+printers = manager.get_printers()
+if not printers:
+    print("❌ Bağlı yazıcı bulunamadı!")
+    print("   USB yazıcıyı bağlayın ve tekrar deneyin.")
+    sys.exit(1)
+
+print(f"✓ {len(printers)} yazıcı bulundu:")
+for p in printers:
+    print(f"   - {p.printer_model} ({p.device_path})")
+
+print("\nTest yazdırılıyor...")
+result = manager.test_print()
+
+if result.success:
+    print(f"✓ Test başarılı! ({result.bytes_written} bytes)")
+else:
+    print(f"❌ Test başarısız: {result.error}")
+    sys.exit(1)
+
+manager.stop()
+PYSCRIPT
+}
+
+cmd_diagnose() {
+    check_install
+
+    echo -e "${CYAN}╔════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║         Feedemy Printer Diagnostics            ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # 1. System info
+    echo -e "${YELLOW}[1/7] Sistem Bilgisi${NC}"
+    echo "   OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || uname -s)"
+    echo "   Kernel: $(uname -r)"
+    echo "   Arch: $(uname -m)"
+    echo "   Python: $($PYTHON --version 2>&1)"
+    echo ""
+
+    # 2. Service status
+    echo -e "${YELLOW}[2/7] Servis Durumu${NC}"
+    if systemctl is-active --quiet $SERVICE_NAME; then
+        echo -e "   Servis: ${GREEN}Çalışıyor${NC}"
+    else
+        echo -e "   Servis: ${RED}Durmuş${NC}"
+    fi
+    if systemctl is-enabled --quiet $SERVICE_NAME 2>/dev/null; then
+        echo -e "   Otomatik Başlatma: ${GREEN}Aktif${NC}"
+    else
+        echo -e "   Otomatik Başlatma: ${RED}Pasif${NC}"
+    fi
+    echo ""
+
+    # 3. Config check
+    echo -e "${YELLOW}[3/7] Config Kontrolü${NC}"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo -e "   Config dosyası: ${GREEN}Mevcut${NC}"
+        # Check if registered
+        TOKEN=$($PYTHON -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('api',{}).get('token') or '')" 2>/dev/null)
+        if [ -n "$TOKEN" ]; then
+            echo -e "   Kayıt durumu: ${GREEN}Kayıtlı${NC}"
+        else
+            echo -e "   Kayıt durumu: ${RED}Kayıtlı Değil${NC}"
+        fi
+        API_URL=$($PYTHON -c "import json; c=json.load(open('$CONFIG_FILE')); print(c.get('api',{}).get('base_url',''))" 2>/dev/null)
+        echo "   API URL: $API_URL"
+    else
+        echo -e "   Config dosyası: ${RED}Bulunamadı${NC}"
+    fi
+    echo ""
+
+    # 4. USB Printers
+    echo -e "${YELLOW}[4/7] USB Yazıcılar${NC}"
+    LP_DEVICES=$(ls /dev/usb/lp* 2>/dev/null || true)
+    if [ -n "$LP_DEVICES" ]; then
+        echo -e "   USB LP cihazları: ${GREEN}Bulundu${NC}"
+        for dev in $LP_DEVICES; do
+            PERMS=$(stat -c "%a" "$dev" 2>/dev/null || echo "???")
+            echo "   - $dev (mode: $PERMS)"
+        done
+    else
+        echo -e "   USB LP cihazları: ${RED}Yok${NC}"
+    fi
+    echo ""
+
+    # 5. Network connectivity
+    echo -e "${YELLOW}[5/7] Ağ Bağlantısı${NC}"
+    if ping -c 1 -W 2 8.8.8.8 > /dev/null 2>&1; then
+        echo -e "   İnternet: ${GREEN}Bağlı${NC}"
+    else
+        echo -e "   İnternet: ${RED}Bağlantı Yok${NC}"
+    fi
+    # API connectivity
+    if [ -n "$API_URL" ]; then
+        if curl -s --connect-timeout 5 "$API_URL/health" > /dev/null 2>&1; then
+            echo -e "   API Sunucusu: ${GREEN}Erişilebilir${NC}"
+        else
+            echo -e "   API Sunucusu: ${YELLOW}Yanıt Yok${NC}"
+        fi
+    fi
+    echo ""
+
+    # 6. Database
+    echo -e "${YELLOW}[6/7] Veritabanı${NC}"
+    if [ -f "$DB_FILE" ]; then
+        echo -e "   SQLite: ${GREEN}Mevcut${NC}"
+        JOB_COUNT=$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM processed_jobs" 2>/dev/null || echo "0")
+        echo "   Toplam job: $JOB_COUNT"
+        LAST_JOB=$(sqlite3 "$DB_FILE" "SELECT datetime(processed_at) FROM processed_jobs ORDER BY processed_at DESC LIMIT 1" 2>/dev/null || echo "Yok")
+        echo "   Son job: $LAST_JOB"
+    else
+        echo -e "   SQLite: ${YELLOW}Henüz oluşturulmamış${NC}"
+    fi
+    echo ""
+
+    # 7. Disk space
+    echo -e "${YELLOW}[7/7] Disk Alanı${NC}"
+    DISK_USAGE=$(df -h "$INSTALL_DIR" 2>/dev/null | tail -1 | awk '{print $5}')
+    DISK_AVAIL=$(df -h "$INSTALL_DIR" 2>/dev/null | tail -1 | awk '{print $4}')
+    echo "   Kullanım: $DISK_USAGE"
+    echo "   Boş alan: $DISK_AVAIL"
+    echo ""
+
+    # Summary
+    echo -e "${CYAN}════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}Diagnostik tamamlandı.${NC}"
+}
+
+cmd_reset() {
+    check_root "reset"
+    check_install
+
+    read -p "Tüm kayıt bilgileri silinecek (token, branch_guid). Emin misiniz? (y/N) " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        info "İptal edildi"
+        return
+    fi
+
+    # Stop service
+    systemctl stop $SERVICE_NAME 2>/dev/null || true
+
+    # Clear registration in config
+    cd "$INSTALL_DIR"
+    $PYTHON << 'PYSCRIPT'
+import json
+
+config_file = "/opt/feedemy-printer/config/config.json"
+try:
+    with open(config_file, 'r') as f:
+        config = json.load(f)
+
+    config['api']['token'] = None
+    config['device']['token_id'] = None
+    config['device']['branch_guid'] = None
+    config['registered_printers'] = []
+
+    with open(config_file, 'w') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+
+    print("✓ Kayıt bilgileri temizlendi")
+except Exception as e:
+    print(f"✗ Hata: {e}")
+PYSCRIPT
+
+    info "Cihaz sıfırlandı. Yeniden kayıt için: sudo feedemy register"
 }
 
 cmd_help() {
-    echo -e "${CYAN}Feedemy Printer CLI${NC}"
+    echo -e "${CYAN}Feedemy Printer CLI v1.0${NC}"
     echo ""
     echo -e "${YELLOW}Kullanım:${NC} feedemy <command> [options]"
     echo ""
@@ -349,6 +542,7 @@ cmd_help() {
     echo ""
     echo -e "${YELLOW}Kurulum & Kayıt:${NC}"
     echo "  register           Pairing code ile cihaz kaydı (interaktif)"
+    echo "  reset              Kayıt bilgilerini sıfırla"
     echo "  update             Yazılımı güncelle"
     echo "  uninstall          Tamamen kaldır"
     echo ""
@@ -363,6 +557,10 @@ cmd_help() {
     echo "  db stats           Job istatistikleri"
     echo "  db clear           Tüm job kayıtlarını sil"
     echo ""
+    echo -e "${YELLOW}Tanılama Komutları:${NC}"
+    echo "  diagnose           Sistem tanılama raporu"
+    echo "  test-print         Test sayfası yazdır"
+    echo ""
     echo -e "${YELLOW}Diğer:${NC}"
     echo "  version            Versiyon bilgisi"
     echo "  help               Bu yardım mesajı"
@@ -372,6 +570,8 @@ cmd_help() {
     echo "  sudo feedemy config name Kitchen-Printer-01"
     echo "  sudo feedemy register"
     echo "  sudo feedemy start"
+    echo "  feedemy diagnose"
+    echo "  feedemy test-print"
     echo "  feedemy logs -f"
 }
 
@@ -389,6 +589,7 @@ case "${1:-help}" in
         fi
         ;;
     register)   cmd_register ;;
+    reset)      cmd_reset ;;
     config)
         case "${2:-show}" in
             show)   cmd_config_show ;;
@@ -408,6 +609,8 @@ case "${1:-help}" in
         ;;
     update)     cmd_update ;;
     uninstall)  cmd_uninstall ;;
+    diagnose)   cmd_diagnose ;;
+    test-print) cmd_test_print ;;
     version|-v|--version) cmd_version ;;
     help|-h|--help) cmd_help ;;
     *)          error "Bilinmeyen komut: $1. 'feedemy help' yazın." ;;

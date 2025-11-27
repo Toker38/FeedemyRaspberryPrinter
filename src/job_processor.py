@@ -103,23 +103,14 @@ class JobProcessor:
     def _render_job(self, job: JobDetail) -> Optional[bytes]:
         """Job'ı ESC/POS bytes'a çevir"""
         try:
-            # Debug: Log template and data
-            logger.info(f"=== JOB DEBUG ===")
-            logger.info(f"Template: {job.template_content[:500]}..." if len(job.template_content) > 500 else f"Template: {job.template_content}")
-            logger.info(f"PrintData: {job.print_data[:500]}..." if len(job.print_data) > 500 else f"PrintData: {job.print_data}")
-
             result = self.renderer.render(
                 template_json=job.template_content,
                 data_json=job.print_data
             )
-
-            # Debug: Log rendered bytes (first 200 bytes as hex)
-            logger.info(f"Rendered {len(result)} bytes")
-            logger.info(f"First 200 bytes (hex): {result[:200].hex()}")
-
+            logger.debug(f"Rendered {len(result)} bytes for job {job.job_guid}")
             return result
         except Exception as e:
-            logger.error(f"Render error: {e}", exc_info=True)
+            logger.error(f"Render error for job {job.job_guid}: {e}")
             return None
 
     async def _complete_job(self, job_guid: str) -> None:

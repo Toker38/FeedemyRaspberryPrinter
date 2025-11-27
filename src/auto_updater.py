@@ -6,6 +6,7 @@ Başlangıçta çalışır, güncelleme varsa systemctl restart yapar
 import subprocess
 import logging
 import hashlib
+import sys
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -24,6 +25,7 @@ class AutoUpdater:
         self.repo_path = Path(repo_path)
         self.branch = branch
         self.requirements_path = self.repo_path / "requirements.txt"
+        self.venv_pip = self.repo_path / "venv" / "bin" / "pip"
 
     def check_and_update(self) -> bool:
         """
@@ -129,9 +131,17 @@ class AutoUpdater:
             return hashlib.md5(f.read()).hexdigest()
 
     def _pip_install(self) -> bool:
-        """pip install -r requirements.txt"""
+        """pip install -r requirements.txt using venv pip"""
+        # Use venv pip if available, otherwise fall back to system pip
+        pip_cmd = str(self.venv_pip) if self.venv_pip.exists() else sys.executable + " -m pip"
+
+        if self.venv_pip.exists():
+            cmd = [str(self.venv_pip), "install", "-r", str(self.requirements_path)]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "-r", str(self.requirements_path)]
+
         result = subprocess.run(
-            ["pip3", "install", "-r", str(self.requirements_path)],
+            cmd,
             cwd=self.repo_path,
             capture_output=True,
             text=True

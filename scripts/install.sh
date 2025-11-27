@@ -3,12 +3,16 @@
 # Feedemy Printer Client - Production Installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/Toker38/FeedemyRaspberryPrinter/main/scripts/install.sh | sudo bash
 #
+# Version: 1.0.0
+# Author: Feedemy Team
+#
 set -eo pipefail
 
 # === Configuration ===
 INSTALL_DIR="/opt/feedemy-printer"
 SERVICE_NAME="feedemy-printer"
 REPO_URL="https://github.com/Toker38/FeedemyRaspberryPrinter.git"
+VERSION="1.0.0"
 
 # === Colors ===
 RED='\033[0;31m'
@@ -24,10 +28,11 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # === Banner ===
 echo ""
-echo -e "${BLUE}╔════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║     Feedemy Printer Client Installer           ║${NC}"
-echo -e "${BLUE}║     Raspberry Pi Thermal Printer Service       ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}╔════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║       Feedemy Printer Client Installer             ║${NC}"
+echo -e "${BLUE}║       Raspberry Pi Thermal Printer Service         ║${NC}"
+echo -e "${BLUE}║       Version: ${VERSION}                                ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 # === Pre-flight checks ===
@@ -45,19 +50,26 @@ fi
 # 3. Architecture check
 ARCH=$(uname -m)
 info "Platform: $ARCH"
+info "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || uname -s)"
 
 # === Installation ===
 
 # Step 1: System dependencies
-info "[1/6] Sistem bağımlılıkları kuruluyor..."
+info "[1/7] Sistem bağımlılıkları kuruluyor..."
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip git > /dev/null 2>&1
+apt-get install -y -qq python3 python3-venv python3-pip git sqlite3 curl > /dev/null 2>&1
 info "Sistem bağımlılıkları kuruldu"
 
 # Step 2: Clone or update repository
-info "[2/6] Proje indiriliyor..."
+info "[2/7] Proje indiriliyor..."
 if [ -d "$INSTALL_DIR" ]; then
+    info "Mevcut kurulum bulundu - güncelleniyor..."
+    info "  → Config, database ve loglar KORUNACAK"
     cd "$INSTALL_DIR"
+
+    # Stop service before update
+    systemctl stop $SERVICE_NAME 2>/dev/null || true
+
     git fetch --quiet origin
     git reset --hard origin/main --quiet
     info "Proje güncellendi"
@@ -68,7 +80,7 @@ else
 fi
 
 # Step 3: Python virtual environment
-info "[3/6] Python ortamı hazırlanıyor..."
+info "[3/7] Python ortamı hazırlanıyor..."
 if [ ! -d "$INSTALL_DIR/venv" ]; then
     python3 -m venv "$INSTALL_DIR/venv"
 fi
@@ -77,7 +89,7 @@ fi
 info "Python bağımlılıkları kuruldu"
 
 # Step 4: Create directories
-info "[4/6] Dizinler oluşturuluyor..."
+info "[4/7] Dizinler oluşturuluyor..."
 mkdir -p "$INSTALL_DIR/data"
 mkdir -p "$INSTALL_DIR/config"
 mkdir -p "$INSTALL_DIR/logs"
@@ -85,7 +97,7 @@ chmod 755 "$INSTALL_DIR/data" "$INSTALL_DIR/config" "$INSTALL_DIR/logs"
 info "Dizinler oluşturuldu"
 
 # Step 5: USB printer permissions (udev rules)
-info "[5/6] USB yazıcı izinleri ayarlanıyor..."
+info "[5/7] USB yazıcı izinleri ayarlanıyor..."
 cat > /etc/udev/rules.d/99-feedemy-printer.rules << 'UDEV_EOF'
 # Feedemy Printer Service - USB Thermal Printer Access
 # USB Printer class (bInterfaceClass=07)

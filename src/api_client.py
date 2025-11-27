@@ -3,12 +3,18 @@ Feedemy API Client
 Backend ile iletişim için HTTP client
 """
 
+import asyncio
 import aiohttp
 import logging
 from typing import Optional, List
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+# Configuration
+DEFAULT_TIMEOUT = 30  # seconds
+MAX_RETRIES = 3
+RETRY_DELAY = 1  # seconds (exponential backoff)
 
 
 @dataclass
@@ -60,29 +66,49 @@ class ApiError(Exception):
 
 
 class FeedemyApiClient:
-    """Feedemy Backend API Client"""
+    """Feedemy Backend API Client with retry and timeout support"""
 
-    def __init__(self, base_url: str, token: Optional[str] = None):
+    def __init__(
+        self,
+        base_url: str,
+        token: Optional[str] = None,
+        timeout: int = DEFAULT_TIMEOUT,
+        max_retries: int = MAX_RETRIES
+    ):
         self.base_url = base_url.rstrip("/")
         self.token = token
+        self.timeout = timeout
+        self.max_retries = max_retries
         self._session: Optional[aiohttp.ClientSession] = None
+        self._timeout_config = aiohttp.ClientTimeout(total=timeout)
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Lazy session oluştur"""
+        """Lazy session oluştur with connection pooling"""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            connector = aiohttp.TCPConnector(
+                limit=10,  # max connections
+                limit_per_host=5,
+                ttl_dns_cache=300,  # DNS cache 5 minutes
+                enable_cleanup_closed=True
+            )
+            self._session = aiohttp.ClientSession(
+                connector=connector,
+                timeout=self._timeout_config
+            )
         return self._session
 
     async def close(self) -> None:
         """Session'ı kapat"""
         if self._session and not self._session.closed:
             await self._session.close()
+            self._session = None
 
     def _get_headers(self, with_auth: bool = True) -> dict:
         """HTTP headers"""
         headers = {
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "User-Agent": "FeedemyPrinter/1.0"
         }
         if with_auth and self.token:
             headers["Authorization"] = f"PrinterDevice {self.token}"
@@ -94,35 +120,64 @@ class FeedemyApiClient:
         endpoint: str,
         json_data: Optional[dict] = None,
         params: Optional[dict] = None,
-        with_auth: bool = True
+        with_auth: bool = True,
+        retry: bool = True
     ) -> dict:
-        """HTTP request yap ve response parse et"""
+        """HTTP request with retry and timeout"""
         session = await self._get_session()
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers(with_auth)
 
-        try:
-            async with session.request(
-                method,
-                url,
-                json=json_data,
-                params=params,
-                headers=headers
-            ) as response:
-                data = await response.json()
+        last_error = None
+        retries = self.max_retries if retry else 1
 
-                # ApiResponse format: { success, message, data, errorCode }
-                if not data.get("success", False):
-                    raise ApiError(
-                        message=data.get("message", "Unknown error"),
-                        error_code=data.get("errorCode")
-                    )
+        for attempt in range(retries):
+            try:
+                async with session.request(
+                    method,
+                    url,
+                    json=json_data,
+                    params=params,
+                    headers=headers
+                ) as response:
+                    # Handle non-JSON responses
+                    content_type = response.headers.get("Content-Type", "")
+                    if "application/json" not in content_type:
+                        if response.status >= 400:
+                            raise ApiError(f"HTTP {response.status}: {await response.text()}")
+                        return None
 
-                return data.get("data")
+                    data = await response.json()
 
-        except aiohttp.ClientError as e:
-            logger.error(f"HTTP error: {e}")
-            raise ApiError(f"Connection error: {e}")
+                    # ApiResponse format: { success, message, data, errorCode }
+                    if not data.get("success", False):
+                        error = ApiError(
+                            message=data.get("message", "Unknown error"),
+                            error_code=data.get("errorCode")
+                        )
+                        # Don't retry on client errors (4xx)
+                        if response.status < 500:
+                            raise error
+                        last_error = error
+                    else:
+                        return data.get("data")
+
+            except asyncio.TimeoutError:
+                last_error = ApiError(f"Request timeout after {self.timeout}s")
+                logger.warning(f"Timeout on {method} {endpoint} (attempt {attempt + 1}/{retries})")
+
+            except aiohttp.ClientError as e:
+                last_error = ApiError(f"Connection error: {e}")
+                logger.warning(f"Connection error on {method} {endpoint}: {e} (attempt {attempt + 1}/{retries})")
+
+            # Exponential backoff before retry
+            if attempt < retries - 1:
+                delay = RETRY_DELAY * (2 ** attempt)
+                await asyncio.sleep(delay)
+
+        # All retries exhausted
+        logger.error(f"All {retries} retries failed for {method} {endpoint}")
+        raise last_error or ApiError("Request failed after all retries")
 
     # === Registration ===
 

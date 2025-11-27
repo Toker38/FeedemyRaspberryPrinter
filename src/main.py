@@ -2,12 +2,20 @@
 """
 Feedemy Raspberry Pi Printer Client
 Main entry point
+
+Version: 1.0.0
+Author: Feedemy Team
 """
 
 import asyncio
 import logging
 import signal
 import sys
+import os
+from pathlib import Path
+
+# Version
+__version__ = "1.0.0"
 
 from .config_manager import ConfigManager
 from .auto_updater import AutoUpdater
@@ -18,18 +26,25 @@ from .job_store import JobStore
 from .job_processor import JobProcessor
 
 # Logging setup
-from pathlib import Path
 log_dir = Path(__file__).parent.parent / "logs"
 log_dir.mkdir(exist_ok=True)
 
+# Log level from environment variable
+log_level = os.environ.get("FEEDEMY_LOG_LEVEL", "INFO").upper()
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level, logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(log_dir / 'feedemy-printer.log', mode='a')
+        logging.FileHandler(log_dir / 'feedemy-printer.log', mode='a', encoding='utf-8')
     ]
 )
+
+# Reduce noise from aiohttp and other libraries
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,9 +60,11 @@ class FeedemyPrinterApp:
 
     async def run(self) -> None:
         """Uygulamayı çalıştır"""
-        logger.info("=" * 50)
-        logger.info("Feedemy Printer Client starting...")
-        logger.info("=" * 50)
+        logger.info("=" * 60)
+        logger.info(f"  Feedemy Printer Client v{__version__}")
+        logger.info(f"  API: {self.config.api.base_url}")
+        logger.info(f"  Device: {self.config.device.name}")
+        logger.info("=" * 60)
 
         try:
             # 1. Auto update check
