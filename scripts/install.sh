@@ -97,8 +97,14 @@ udevadm control --reload-rules
 udevadm trigger
 info "USB izinleri ayarlandı"
 
-# Step 6: Systemd service
-info "[6/6] Servis kuruluyor..."
+# Step 6: CLI tool
+info "[6/7] CLI aracı kuruluyor..."
+cp "$INSTALL_DIR/scripts/feedemy-cli.sh" /usr/local/bin/feedemy
+chmod +x /usr/local/bin/feedemy
+info "CLI kuruldu: /usr/local/bin/feedemy"
+
+# Step 7: Systemd service
+info "[7/7] Servis kuruluyor..."
 cat > /etc/systemd/system/$SERVICE_NAME.service << SERVICE_EOF
 [Unit]
 Description=Feedemy Printer Service
@@ -140,19 +146,25 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "${YELLOW}Sonraki adımlar:${NC}"
 echo ""
-echo "  1. USB yazıcıyı bağlayın"
+echo "  1. (Opsiyonel) Config ayarla:"
+echo -e "     ${BLUE}sudo feedemy config api https://api.feedemy.com${NC}"
+echo -e "     ${BLUE}sudo feedemy config name Kitchen-Printer-01${NC}"
 echo ""
-echo "  2. İlk kayıt için çalıştırın:"
-echo -e "     ${BLUE}sudo $INSTALL_DIR/venv/bin/python -m src.main${NC}"
+echo "  2. USB yazıcıyı bağlayın"
 echo ""
-echo "  3. Admin panelden pairing code alın ve girin"
+echo "  3. Cihaz kaydı yapın:"
+echo -e "     ${BLUE}sudo feedemy register${NC}"
 echo ""
-echo "  4. Kayıt tamamlandıktan sonra servisi başlatın:"
-echo -e "     ${BLUE}sudo systemctl start $SERVICE_NAME${NC}"
+echo "  4. Servisi başlatın:"
+echo -e "     ${BLUE}sudo feedemy start${NC}"
 echo ""
-echo -e "${YELLOW}Faydalı komutlar:${NC}"
-echo "  Logları izle:     journalctl -u $SERVICE_NAME -f"
-echo "  Servis durumu:    systemctl status $SERVICE_NAME"
-echo "  Servisi durdur:   sudo systemctl stop $SERVICE_NAME"
-echo "  Servisi başlat:   sudo systemctl start $SERVICE_NAME"
+echo -e "${YELLOW}CLI Komutları:${NC}"
+echo "  feedemy start        Servisi başlat"
+echo "  feedemy stop         Servisi durdur"
+echo "  feedemy status       Durum göster"
+echo "  feedemy logs -f      Logları canlı izle"
+echo "  feedemy db jobs      İşlenen job'ları listele"
+echo "  feedemy db stats     İstatistikler"
+echo "  feedemy update       Güncelle"
+echo "  feedemy help         Tüm komutlar"
 echo ""
