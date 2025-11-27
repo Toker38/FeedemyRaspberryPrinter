@@ -85,7 +85,7 @@ class FeedemyApiClient:
             "Accept": "application/json"
         }
         if with_auth and self.token:
-            headers["Authorization"] = f"PrinterToken {self.token}"
+            headers["Authorization"] = f"PrinterDevice {self.token}"
         return headers
 
     async def _request(
