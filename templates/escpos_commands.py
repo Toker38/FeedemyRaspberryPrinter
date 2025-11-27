@@ -9,7 +9,12 @@ GS = b'\x1d'
 LF = b'\x0a'
 
 # === Initialization ===
-INIT = ESC + b'@'  # Reset printer
+# Xprinter ve benzeri yazıcılar için güçlü başlatma sekansı
+INIT = (
+    ESC + b'@' +      # Reset printer
+    b'\x00' * 50 +    # Null bytes - yazıcıyı uyandır
+    ESC + b'@'        # Reset tekrar
+)
 
 # === Text Formatting ===
 BOLD_ON = ESC + b'E\x01'
@@ -39,8 +44,9 @@ FEED_ONE = feed_lines(1)
 FEED_THREE = feed_lines(3)
 
 # === Cut ===
-CUT_FULL = GS + b'V\x00'     # Tam kesim
-CUT_PARTIAL = GS + b'V\x01'  # Kısmi kesim (kağıt bağlı kalır)
+# Kesimden önce kağıt besleme eklenir (yazıcı kafası kesim noktasının üstünde)
+CUT_FULL = feed_lines(5) + GS + b'V\x00'     # 5 satır + Tam kesim
+CUT_PARTIAL = feed_lines(5) + GS + b'V\x01'  # 5 satır + Kısmi kesim
 
 # === Character Set ===
 # ESC t n - Select character code table
