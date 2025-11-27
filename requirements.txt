@@ -1,0 +1,17 @@
+# Feedemy Raspberry Pi Printer Client
+# Python 3.9+
+
+# HTTP Client
+aiohttp>=3.8.0
+
+# USB Device Detection (Linux only)
+pyudev>=0.24.0
+
+# Serial Communication
+pyserial>=3.5
+
+# ESC/POS Printing
+python-escpos>=3.0
+
+# Git Operations
+GitPython>=3.1.0

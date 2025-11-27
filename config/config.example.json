@@ -1,0 +1,23 @@
+{
+  "api": {
+    "base_url": "https://api.feedemy.com",
+    "token": null
+  },
+  "device": {
+    "name": "Raspberry-001",
+    "branch_guid": null,
+    "token_id": null
+  },
+  "polling": {
+    "interval_seconds": 5,
+    "batch_size": 10
+  },
+  "printer": {
+    "default_width": 48,
+    "charset": "cp857"
+  },
+  "auto_update": {
+    "enabled": true,
+    "branch": "main"
+  }
+}
