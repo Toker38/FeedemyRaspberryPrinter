@@ -113,6 +113,26 @@ cmd_config_set() {
         error "Kullanım: feedemy config set <key> <value>"
     fi
 
+    # Smart key aliases - catch common mistakes
+    case "$key" in
+        base_url|url|api_url)
+            warn "\"$key\" yerine \"api.base_url\" kullanılıyor"
+            key="api.base_url"
+            ;;
+        name|device_name)
+            warn "\"$key\" yerine \"device.name\" kullanılıyor"
+            key="device.name"
+            ;;
+        token)
+            warn "\"$key\" yerine \"api.token\" kullanılıyor"
+            key="api.token"
+            ;;
+        interval|poll_interval)
+            warn "\"$key\" yerine \"polling.interval_seconds\" kullanılıyor"
+            key="polling.interval_seconds"
+            ;;
+    esac
+
     # Ensure config directory exists
     mkdir -p "$INSTALL_DIR/config"
 
