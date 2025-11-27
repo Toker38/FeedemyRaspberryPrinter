@@ -183,6 +183,11 @@ class FeedemyPrinterApp:
         printers = self.printer_manager.get_printers()
 
         for printer in printers:
+            # Zaten kayıtlıysa atla
+            if self.config.is_printer_registered(printer.device_address):
+                logger.debug(f"Printer already registered: {printer.device_address}")
+                continue
+
             try:
                 logger.info(f"Registering printer: {printer.printer_model}")
                 result = await self.api.add_printer(
@@ -191,9 +196,13 @@ class FeedemyPrinterApp:
                     printer_model=printer.printer_model,
                     connection_type=2  # USB
                 )
+                # Kayıtlı listesine ekle
+                self.config.add_registered_printer(
+                    device_address=printer.device_address,
+                    printer_guid=result.branch_printer_guid
+                )
                 logger.info(f"Printer registered: {result.branch_printer_guid}")
             except ApiError as e:
-                # Zaten kayıtlı olabilir
                 logger.warning(f"Could not register printer: {e.message}")
 
     def _setup_signal_handlers(self) -> None:

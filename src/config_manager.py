@@ -169,3 +169,32 @@ class ConfigManager:
         """API URL'ini güncelle"""
         self._data["api"]["base_url"] = url
         self.save()
+
+    # === Printer Management ===
+
+    def get_registered_printers(self) -> list:
+        """Kayıtlı yazıcı device_address listesi"""
+        return self._data.get("registered_printers", [])
+
+    def add_registered_printer(self, device_address: str, printer_guid: str) -> None:
+        """Yazıcıyı kayıtlı listesine ekle"""
+        if "registered_printers" not in self._data:
+            self._data["registered_printers"] = []
+
+        # Zaten varsa ekleme
+        for p in self._data["registered_printers"]:
+            if p.get("device_address") == device_address:
+                return
+
+        self._data["registered_printers"].append({
+            "device_address": device_address,
+            "printer_guid": printer_guid
+        })
+        self.save()
+
+    def is_printer_registered(self, device_address: str) -> bool:
+        """Bu device_address kayıtlı mı?"""
+        for p in self._data.get("registered_printers", []):
+            if p.get("device_address") == device_address:
+                return True
+        return False
