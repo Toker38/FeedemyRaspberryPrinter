@@ -230,10 +230,13 @@ class TemplateRenderer:
         output.extend(get_size_command(font_size))
 
         for item in items:
-            # Ana ürün satırı: "2x Pizza Margherita    45.00"
+            # Ana ürün satırı: "2x Pizza Margherita    45.00" (BOLD)
             qty = item.get("quantity", 1)
             name = item.get("productName", item.get("name", ""))
-            price = item.get("effectivePrice", item.get("price", 0))
+            price = item.get("lineTotal", item.get("effectivePrice", item.get("price", 0)))
+
+            # Ürün satırı BOLD olsun (mürekkep azalınca belli olsun)
+            output.extend(BOLD_ON)
 
             if show_qty and show_price:
                 left = f"{qty}x {name}"
@@ -251,6 +254,7 @@ class TemplateRenderer:
 
             output.extend(encode_turkish(line))
             output.extend(LF)
+            output.extend(BOLD_OFF)
 
             # Seçilen opsiyon (string veya dict olabilir)
             selected_option = item.get("selectedOption")
