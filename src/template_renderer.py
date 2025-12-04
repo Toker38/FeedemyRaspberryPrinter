@@ -212,30 +212,32 @@ class TemplateRenderer:
         return feed_lines(n)
 
     def _render_items(self, element: dict, data: dict, width: int) -> bytes:
-        """Ürün listesi render et"""
+        """Ürün listesi render et - tam destek: option fiyat, addon miktar, subItems"""
         output = bytearray()
 
         items = data.get("items", [])
         show_qty = element.get("showQuantity", True)
         show_price = element.get("showPrice", True)
         show_addons = element.get("showAddons", True)
+        show_sub_items = element.get("showSubItems", True)
         show_notes = element.get("showNotes", True)
         show_removed = element.get("showRemovedIngredients", False)
+        show_option = element.get("showSelectedOption", True)
 
         font_size = element.get("fontSize", "md")
         addon_prefix = element.get("addonPrefix", "  + ")
+        sub_item_prefix = element.get("subItemPrefix", "  > ")
         note_prefix = element.get("notePrefix", "  * ")
-        removed_prefix = element.get("removedPrefix", "  - ")
+        removed_prefix = element.get("removedPrefix", "  - CIKART: ")
 
         output.extend(get_size_command(font_size))
 
         for item in items:
-            # Ana ürün satırı: "2x Pizza Margherita    45.00" (BOLD)
+            # === ANA URUN SATIRI ===
             qty = item.get("quantity", 1)
             name = item.get("productName", item.get("name", ""))
-            price = item.get("lineTotal", item.get("effectivePrice", item.get("price", 0)))
+            price = item.get("lineTotal", item.get("unitPrice", item.get("price", 0)))
 
-            # Ürün satırı BOLD olsun (mürekkep azalınca belli olsun)
             output.extend(BOLD_ON)
 
             if show_qty and show_price:
@@ -256,47 +258,146 @@ class TemplateRenderer:
             output.extend(LF)
             output.extend(BOLD_OFF)
 
-            # Seçilen opsiyon (string veya dict olabilir)
-            selected_option = item.get("selectedOption")
-            if selected_option:
-                if isinstance(selected_option, dict):
-                    opt_name = selected_option.get("optionName", "")
-                else:
-                    opt_name = str(selected_option)
-                if opt_name:
-                    output.extend(encode_turkish(f"  ({opt_name})"))
-                    output.extend(LF)
+            # === SECILEN OPSIYON (fiyat dahil) ===
+            if show_option:
+                selected_option = item.get("selectedOption")
+                option_price = item.get("selectedOptionPrice", 0)
+                if selected_option:
+                    if isinstance(selected_option, dict):
+                        opt_name = selected_option.get("optionName", "")
+                        option_price = selected_option.get("priceModifier", option_price)
+                    else:
+                        opt_name = str(selected_option)
 
-            # Eklentiler (Addons)
+                    if opt_name:
+                        if show_price and option_price and option_price != 0:
+                            sign = "+" if option_price > 0 else ""
+                            output.extend(encode_turkish(f"  ({opt_name} {sign}{option_price:.2f})"))
+                        else:
+                            output.extend(encode_turkish(f"  ({opt_name})"))
+                        output.extend(LF)
+
+            # === CIKARILAN MALZEMELER (belirgin sekilde) ===
+            if show_removed:
+                removed = item.get("removedIngredients", [])
+                # removedIngredientsText varsa onu kullan (hazir formatli)
+                removed_text = item.get("removedIngredientsText")
+                if removed_text:
+                    output.extend(BOLD_ON)
+                    output.extend(encode_turkish(f"  {removed_text}"))
+                    output.extend(LF)
+                    output.extend(BOLD_OFF)
+                elif removed:
+                    output.extend(BOLD_ON)
+                    ing_names = []
+                    for ing in removed:
+                        if isinstance(ing, dict):
+                            ing_names.append(ing.get("ingredientName", ing.get("name", "")))
+                        else:
+                            ing_names.append(str(ing))
+                    if ing_names:
+                        output.extend(encode_turkish(f"{removed_prefix}{', '.join(ing_names)}"))
+                        output.extend(LF)
+                    output.extend(BOLD_OFF)
+
+            # === EKLENTILER (Addons) - miktar ve fiyat dahil ===
             if show_addons:
                 addons = item.get("addons", [])
                 for addon in addons:
                     addon_name = addon.get("addonName", addon.get("name", ""))
-                    addon_price = addon.get("price", 0)
-                    if show_price and addon_price > 0:
-                        addon_line = f"{addon_prefix}{addon_name}  +{addon_price:.2f}"
+                    addon_qty = addon.get("quantity", addon.get("quantityPerParent", 1))
+                    addon_unit_price = addon.get("unitPrice", addon.get("price", 0))
+                    addon_line_total = addon.get("lineTotal", addon_unit_price * addon_qty)
+                    related_option = addon.get("relatedOptionName")
+
+                    # Addon satiri olustur
+                    if addon_qty > 1:
+                        addon_text = f"{addon_prefix}{addon_qty}x {addon_name}"
                     else:
-                        addon_line = f"{addon_prefix}{addon_name}"
-                    output.extend(encode_turkish(addon_line))
+                        addon_text = f"{addon_prefix}{addon_name}"
+
+                    # İliskili opsiyon varsa ekle
+                    if related_option:
+                        addon_text += f" ({related_option})"
+
+                    # Fiyat ekle
+                    if show_price and addon_line_total > 0:
+                        addon_text += f"  +{addon_line_total:.2f}"
+
+                    output.extend(encode_turkish(addon_text))
                     output.extend(LF)
 
-            # Çıkarılan malzemeler (string listesi veya dict listesi olabilir)
-            if show_removed:
-                removed = item.get("removedIngredients", [])
-                for ing in removed:
-                    if isinstance(ing, dict):
-                        ing_name = ing.get("ingredientName", ing.get("name", ""))
+            # === SET MENU ALT OGELERI (SubItems) ===
+            if show_sub_items:
+                sub_items = item.get("subItems", [])
+                for sub in sub_items:
+                    sub_title = sub.get("displayTitle", "")
+                    sub_name = sub.get("itemName", sub.get("name", ""))
+                    sub_qty = sub.get("quantity", sub.get("quantityPerParent", 1))
+                    sub_additional_price = sub.get("additionalPrice", 0)
+
+                    # SubItem satiri
+                    if sub_title:
+                        sub_text = f"{sub_item_prefix}{sub_title}: "
                     else:
-                        ing_name = str(ing)
-                    output.extend(encode_turkish(f"{removed_prefix}{ing_name}"))
+                        sub_text = f"{sub_item_prefix}"
+
+                    if sub_qty > 1:
+                        sub_text += f"{sub_qty}x {sub_name}"
+                    else:
+                        sub_text += sub_name
+
+                    if show_price and sub_additional_price > 0:
+                        sub_text += f"  +{sub_additional_price:.2f}"
+
+                    output.extend(encode_turkish(sub_text))
                     output.extend(LF)
 
-            # Ürün notu
+                    # SubItem cikarilan malzemeler
+                    if show_removed:
+                        sub_removed_text = sub.get("removedIngredientsText")
+                        sub_removed = sub.get("removedIngredients", [])
+                        if sub_removed_text:
+                            output.extend(BOLD_ON)
+                            output.extend(encode_turkish(f"    {sub_removed_text}"))
+                            output.extend(LF)
+                            output.extend(BOLD_OFF)
+                        elif sub_removed:
+                            output.extend(BOLD_ON)
+                            sub_ing_names = [str(ing) if not isinstance(ing, dict) else ing.get("ingredientName", "") for ing in sub_removed]
+                            if sub_ing_names:
+                                output.extend(encode_turkish(f"    {removed_prefix}{', '.join(sub_ing_names)}"))
+                                output.extend(LF)
+                            output.extend(BOLD_OFF)
+
+                    # SubItem addonlari
+                    if show_addons:
+                        sub_addons = sub.get("addons", [])
+                        for sub_addon in sub_addons:
+                            sa_name = sub_addon.get("addonName", sub_addon.get("name", ""))
+                            sa_qty = sub_addon.get("quantity", sub_addon.get("quantityPerParent", 1))
+                            sa_price = sub_addon.get("lineTotal", sub_addon.get("unitPrice", 0))
+
+                            if sa_qty > 1:
+                                sa_text = f"    {addon_prefix}{sa_qty}x {sa_name}"
+                            else:
+                                sa_text = f"    {addon_prefix}{sa_name}"
+
+                            if show_price and sa_price > 0:
+                                sa_text += f"  +{sa_price:.2f}"
+
+                            output.extend(encode_turkish(sa_text))
+                            output.extend(LF)
+
+            # === URUN NOTU ===
             if show_notes:
                 item_note = item.get("note")
                 if item_note:
                     output.extend(encode_turkish(f"{note_prefix}{item_note}"))
                     output.extend(LF)
+
+            # Urunler arasi bosluk
+            output.extend(LF)
 
         output.extend(NORMAL)
         return bytes(output)
