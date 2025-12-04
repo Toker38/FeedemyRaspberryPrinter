@@ -236,7 +236,7 @@ class TemplateRenderer:
             # === ANA URUN SATIRI ===
             qty = item.get("quantity", 1)
             name = item.get("productName", item.get("name", ""))
-            price = item.get("lineTotal", item.get("unitPrice", item.get("price", 0)))
+            price = item.get("unitPrice", item.get("price", 0))
 
             output.extend(BOLD_ON)
 
